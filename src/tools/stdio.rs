@@ -1,44 +1,59 @@
-use opentelemetry::sdk::export::trace::stdout::PipelineBuilder;
-use opentelemetry::sdk::Resource;
-use opentelemetry::{
-    global, sdk::propagation::TraceContextPropagator, sdk::trace as sdktrace, trace::TraceError,
-};
+use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::trace::{self as sdktrace, TracerProvider};
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::export::trace::{SpanData, SpanExporter, ExportResult};
+use opentelemetry::{global, trace::{TraceError, TracerProvider as _}};
 use std::fmt::Debug;
-use std::io::Write;
 
-pub fn identity<W: Write>(v: PipelineBuilder<W>) -> PipelineBuilder<W> {
+pub fn identity(v: sdktrace::Builder) -> sdktrace::Builder {
     v
 }
 
-pub fn init_tracer<F, W>(
+pub fn init_tracer<F, E>(
     resource: Resource,
     transform: F,
-    w: W,
+    mut exporter: E,
 ) -> Result<sdktrace::Tracer, TraceError>
 where
-    F: FnOnce(PipelineBuilder<W>) -> PipelineBuilder<W>,
-    W: Write + Debug + Send + 'static,
+    F: FnOnce(sdktrace::Builder) -> sdktrace::Builder,
+    E: SpanExporter + 'static,
 {
     global::set_text_map_propagator(TraceContextPropagator::new());
 
-    let mut pipeline = PipelineBuilder::default().with_writer(w).with_trace_config(
-        sdktrace::config()
-            .with_resource(resource)
-            .with_sampler(sdktrace::Sampler::AlwaysOn),
-    );
-    pipeline = transform(pipeline);
-    Ok(pipeline.install_simple())
+    exporter.set_resource(&resource);
+    let builder = TracerProvider::builder().with_simple_exporter(exporter);
+    let provider = transform(builder).build();
+
+    Ok(provider.tracer("axum-tracing-opentelemetry"))
 }
 
 #[derive(Debug, Default)]
-pub struct WriteNoWhere;
-
-impl Write for WriteNoWhere {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+pub enum StdoutExporter {
+    #[default]
+    Noop,
+    Stdout {
+        exporter: opentelemetry_stdout::SpanExporter,
     }
 }
+
+impl StdoutExporter {
+    pub fn noop() -> Self {
+        Self::Noop
+    }
+
+    pub fn new() -> Self {
+        Self::Stdout {
+            exporter: opentelemetry_stdout::SpanExporter::default(),
+        }
+    }
+}
+
+impl SpanExporter for StdoutExporter {
+    fn export(&mut self, batch: Vec<SpanData>) -> futures::future::BoxFuture<'static, ExportResult> {
+        match self {
+            Self::Noop => Box::pin(futures::future::ready(Ok(()))),
+            Self::Stdout { exporter } => exporter.export(batch),
+        }
+    }
+}
+

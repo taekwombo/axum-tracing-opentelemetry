@@ -1,5 +1,5 @@
-use axum::extract::Path;
-use axum::{response::IntoResponse, routing::get, BoxError, Router};
+use pin_axum::extract::Path;
+use pin_axum::{response::IntoResponse, routing::get, BoxError, Router};
 use axum_tracing_opentelemetry::{opentelemetry_tracing_layer, response_with_trace_layer};
 use serde_json::json;
 use std::net::SocketAddr;
@@ -15,7 +15,7 @@ async fn main() -> Result<(), BoxError> {
     tracing::warn!("listening on {}", addr);
     tracing::info!("try to call `curl -i http://127.0.0.1:3003/` (with trace)"); //Devskim: ignore DS137138
     tracing::info!("try to call `curl -i http://127.0.0.1:3003/health` (with NO trace)"); //Devskim: ignore DS137138
-    axum::Server::bind(addr)
+    pin_axum::Server::bind(addr)
         .serve(app.into_make_service())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
@@ -39,19 +39,19 @@ fn app() -> Router {
 }
 
 async fn health() -> impl IntoResponse {
-    axum::Json(json!({ "status" : "UP" }))
+    pin_axum::Json(json!({ "status" : "UP" }))
 }
 
 async fn index() -> impl IntoResponse {
     let trace_id = axum_tracing_opentelemetry::find_current_trace_id();
-    axum::Json(json!({ "my_trace_id": trace_id }))
+    pin_axum::Json(json!({ "my_trace_id": trace_id }))
 }
 
 async fn proxy_handler(Path((service, path)): Path<(String, String)>) -> impl IntoResponse {
     // Overwrite the otel.name of the span
     tracing::Span::current().record("otel.name", format!("proxy {service}"));
     let trace_id = axum_tracing_opentelemetry::find_current_trace_id();
-    axum::Json(
+    pin_axum::Json(
         json!({ "my_trace_id": trace_id, "fake_proxy": { "service": service, "path": path } }),
     )
 }

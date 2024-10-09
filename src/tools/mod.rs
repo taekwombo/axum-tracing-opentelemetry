@@ -1,15 +1,11 @@
-use opentelemetry::propagation::TextMapPropagator;
-use opentelemetry::sdk::propagation::{
-    BaggagePropagator, TextMapCompositePropagator, TraceContextPropagator,
-};
+use opentelemetry::propagation::{TextMapPropagator, TextMapCompositePropagator};
+use opentelemetry_sdk::propagation::{BaggagePropagator, TraceContextPropagator};
 #[cfg(feature = "tracer")]
-use opentelemetry::sdk::trace::Tracer;
+use opentelemetry_sdk::trace::Tracer;
 #[cfg(feature = "tracer")]
-use opentelemetry::sdk::Resource;
+use opentelemetry_sdk::Resource;
 use opentelemetry::trace::TraceError;
 
-#[cfg(feature = "jaeger")]
-pub mod jaeger;
 #[cfg(feature = "otlp")]
 pub mod otlp;
 #[cfg(feature = "tracer")]
@@ -24,10 +20,7 @@ pub mod tracing_subscriber_ext;
 pub enum CollectorKind {
     #[cfg(feature = "otlp")]
     Otlp,
-    #[cfg(feature = "jaeger")]
-    Jaeger,
     Stdout,
-    Stderr,
     NoWrite,
 }
 
@@ -38,10 +31,9 @@ pub enum CollectorKind {
 )]
 pub fn init_tracer(kind: CollectorKind, resource: Resource) -> Result<Tracer, TraceError> {
     match kind {
-        CollectorKind::Stdout => stdio::init_tracer(resource, stdio::identity, std::io::stdout()),
-        CollectorKind::Stderr => stdio::init_tracer(resource, stdio::identity, std::io::stderr()),
+        CollectorKind::Stdout => stdio::init_tracer(resource, stdio::identity, stdio::StdoutExporter::new()),
         CollectorKind::NoWrite => {
-            stdio::init_tracer(resource, stdio::identity, stdio::WriteNoWhere::default())
+            stdio::init_tracer(resource, stdio::identity, stdio::StdoutExporter::noop())
         }
         #[cfg(feature = "otlp")]
         CollectorKind::Otlp => {
@@ -51,12 +43,6 @@ pub fn init_tracer(kind: CollectorKind, resource: Resource) -> Result<Tracer, Tr
             //     anyhow!("failed to parse OTEL_COLLECTOR_URL").into(),
             // ))?;
             otlp::init_tracer(resource, otlp::identity)
-        }
-        #[cfg(feature = "jaeger")]
-        CollectorKind::Jaeger => {
-            // Or "OTEL_EXPORTER_JAEGER_ENDPOINT"
-            // or now variable
-            jaeger::init_tracer(resource, jaeger::identity)
         }
     }
 }
@@ -71,7 +57,6 @@ pub fn init_tracer(kind: CollectorKind, resource: Resource) -> Result<Tracer, Tr
 /// - "baggage": W3C Baggage
 /// - "b3": B3 Single (require feature "zipkin")
 /// - "b3multi": B3 Multi (require feature "zipkin")
-/// - "jaeger": Jaeger (require feature "jaeger")
 /// - "xray": AWS X-Ray (require feature "xray")
 /// - "ottrace": OT Trace (third party) (not supported)
 /// - "none": No automatically configured propagator.
@@ -125,14 +110,6 @@ fn propagator_from_string(
         "b3multi" => Err(TraceError::from(
             "unsupported propagators form env OTEL_PROPAGATORS: 'b3multi', try to enable compile feature 'zipkin'"
         )),
-        #[cfg(feature = "jaeger")]
-        "jaeger" => Ok(Some(Box::new(
-            opentelemetry_jaeger::Propagator::default()
-        ))),
-        #[cfg(not(feature = "jaeger"))]
-        "jaeger" => Err(TraceError::from(
-            "unsupported propagators form env OTEL_PROPAGATORS: 'jaeger', try to enable compile feature 'jaeger'"
-        )),
         #[cfg(feature = "xray")]
         "xray" => Ok(Some(Box::new(
             opentelemetry_aws::trace::XrayPropagator::default(),
@@ -173,14 +150,14 @@ pub fn find_current_trace_id() -> Option<String> {
 #[cfg(feature = "tracer")]
 mod tests {
     use assert2::*;
-    use axum::{
+    use pin_axum::{
         body::Body,
         http::{Request, StatusCode},
         routing::get,
         BoxError, Router,
     };
-    use tower::Service; // for `call`
-    use tower::ServiceExt; // for `oneshot` and `ready`
+    use pin_tower::Service; // for `call`
+    use pin_tower::ServiceExt; // for `oneshot` and `ready`
     use tracing::subscriber::DefaultGuard;
 
     fn init_tracing() -> Result<DefaultGuard, BoxError> {
@@ -202,7 +179,7 @@ mod tests {
             // let otel_tracer =
             //     otlp::init_tracer(otel_rsrc, otlp::identity).expect("setup of Tracer");
             let otel_tracer =
-                stdio::init_tracer(otel_rsrc, stdio::identity, stdio::WriteNoWhere::default())?;
+                stdio::init_tracer(otel_rsrc, stdio::identity, stdio::StdoutExporter::noop())?;
             init_propagator()?;
             tracing_opentelemetry::layer().with_tracer(otel_tracer)
         };

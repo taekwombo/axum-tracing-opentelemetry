@@ -11,24 +11,24 @@ repository = "https://github.com/davidB/axum-tracing-opentelemetry"
 homepage = "https://github.com/davidB/axum-tracing-opentelemetry"
 
 [dependencies]
-axum = "0.5"
-# axum-core = "0.3"
+# opentelemetry_otlp->tonic depends on axum 0.7
+pin-axum = { package = "axum", version = "0.5" }
+pin-http = { package = "http", version = "0.2.12" }
+pin-tower = { package = "tower", version = "0.4.13" }
+pin-tower-http = { package = "tower-http", version = "0.3.5", features = ["trace"] }
+
 futures = "0.3"
-http = "0.2"
-opentelemetry = { version = "0.19", features = ["rt-tokio"] }
-opentelemetry-aws = { version = "0.7", optional = true }
-opentelemetry-jaeger = { version = "0.18", features = [
-  "rt-tokio",
-], optional = true }
-opentelemetry-otlp = { version = "0.12", optional = true, features = [
+opentelemetry = { version = "0.25" }
+opentelemetry_sdk = { version = "0.25", features = ["rt-tokio"] }
+opentelemetry-aws = { version = "0.13", optional = true }
+opentelemetry-otlp = { version = "0.25", optional = true, features = [
   "http-proto",
 ] }
-opentelemetry-semantic-conventions = { version = "0.11", optional = true }
-opentelemetry-zipkin = { version = "0.17", features = [], optional = true }
-tower = "0.4"
-tower-http = { version = "0.4", features = ["trace"] }
+opentelemetry-semantic-conventions = { version = "0.25", optional = true }
+opentelemetry-stdout = { version = "0.25", optional = true }
+opentelemetry-zipkin = { version = "0.25", features = [], optional = true }
 tracing = "0.1"
-tracing-opentelemetry = "0.19"
+tracing-opentelemetry = "0.26"
 tracing-subscriber = { version = "0.3", default-features = false, features = [
   "ansi",
   "env-filter",
@@ -40,7 +40,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
 assert2 = "0.3"
 hyper = "0.14"
 insta = { version = "1.29.0", features = ["yaml", "redactions"] }
-opentelemetry-otlp = { version = "0.12", features = [
+opentelemetry-otlp = { version = "0.25", features = [
   "http-proto",
   "reqwest-client",
   "reqwest-rustls",
@@ -56,9 +56,8 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
 ] }
 
 [features]
-jaeger = ["dep:opentelemetry-jaeger", "tracer"]
 otlp = ["dep:opentelemetry-otlp", "tracer"]
-tracer = ["dep:opentelemetry-semantic-conventions"]
+tracer = ["dep:opentelemetry-semantic-conventions", "dep:opentelemetry-stdout"]
 xray = ["dep:opentelemetry-aws"]
 zipkin = ["dep:opentelemetry-zipkin"]
 tracing_subscriber_ext = ["dep:tracing-subscriber", "otlp"]

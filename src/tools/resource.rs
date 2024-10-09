@@ -1,9 +1,19 @@
-use opentelemetry::sdk::{
-    resource::{OsResourceDetector, ResourceDetector},
-    Resource,
-};
+use opentelemetry_sdk::{resource::ResourceDetector, Resource};
 use opentelemetry_semantic_conventions as semcov;
+use opentelemetry::KeyValue;
 use std::time::Duration;
+use std::env::consts::OS;
+
+struct OsResourceDetector;
+
+impl ResourceDetector for OsResourceDetector {
+    fn detect(&self, _timeout: Duration) -> Resource {
+        Resource::new(vec![KeyValue::new(
+            semcov::attribute::OS_TYPE,
+            OS,
+        )])
+    }
+}
 
 /// call with service name and version
 ///
@@ -21,8 +31,8 @@ where
     S2: Into<String>,
 {
     Resource::new(vec![
-        semcov::resource::SERVICE_NAME.string(service_name.into()),
-        semcov::resource::SERVICE_VERSION.string(service_version.into()),
+        KeyValue::new(semcov::resource::SERVICE_NAME, service_name.into()),
+        KeyValue::new(semcov::resource::SERVICE_VERSION, service_version.into()),
     ])
 }
 
@@ -97,12 +107,12 @@ impl ResourceDetector for ServiceInfoDetector {
             .or_else(|_| std::env::var("APP_NAME"))
             .ok()
             .or_else(|| self.fallback_service_name.map(|v| v.to_string()))
-            .map(|v| semcov::resource::SERVICE_NAME.string(v));
+            .map(|v| KeyValue::new(semcov::resource::SERVICE_NAME, v));
         let service_version = std::env::var("SERVICE_VERSION")
             .or_else(|_| std::env::var("APP_VERSION"))
             .ok()
             .or_else(|| self.fallback_service_version.map(|v| v.to_string()))
-            .map(|v| semcov::resource::SERVICE_VERSION.string(v));
+            .map(|v| KeyValue::new(semcov::resource::SERVICE_VERSION, v));
         Resource::new(vec![service_name, service_version].into_iter().flatten())
     }
 }

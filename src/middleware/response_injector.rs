@@ -1,7 +1,8 @@
-use axum::{body::Body, http::Request, response::Response};
+use pin_axum::{body::Body, http::Request, response::Response};
+use pin_http as http;
 use futures::future::BoxFuture;
 use std::task::{Context, Poll};
-use tower::{Layer, Service};
+use pin_tower::{Layer, Service};
 
 pub fn response_with_trace_layer() -> OtelInResponseLayer {
     OtelInResponseLayer {}

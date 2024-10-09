@@ -21,7 +21,7 @@ For examples, you can look at:
 use axum_tracing_opentelemetry::opentelemetry_tracing_layer;
 
 #[tokio::main]
-async fn main() -> Result<(), axum::BoxError> {
+async fn main() -> Result<(), pin_axum::BoxError> {
     // very opinionated init of tracing, look as is source to make your own
     axum_tracing_opentelemetry::tracing_subscriber_ext::init_subscribers()?;
 
@@ -29,7 +29,7 @@ async fn main() -> Result<(), axum::BoxError> {
     // run it
     let addr = &"0.0.0.0:3000".parse::<SocketAddr>()?;
     tracing::warn!("listening on {}", addr);
-    axum::Server::bind(&addr)
+    pin_axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .with_graceful_shutdown(shutdown_signal())
         .await?;

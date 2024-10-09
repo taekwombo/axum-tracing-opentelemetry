@@ -3,14 +3,14 @@
 //!
 //! See [`opentelemetry_tracing_layer`] for more details.
 
-use axum::{
+use pin_axum::{
     extract::{ConnectInfo, MatchedPath, OriginalUri},
     response::Response,
 };
-use http::{header, uri::Scheme, HeaderMap, Method, Request, Version};
+use pin_http::{header, uri::Scheme, HeaderMap, Method, Request, Version};
 use opentelemetry::trace::{TraceContextExt, TraceId};
 use std::{borrow::Cow, net::SocketAddr, time::Duration};
-use tower_http::{
+use pin_tower_http::{
     classify::{
         GrpcErrorsAsFailures, GrpcFailureClass, ServerErrorsAsFailures, ServerErrorsFailureClass,
         SharedClassifier,
@@ -45,17 +45,17 @@ use tracing::{field::Empty, Span};
 /// # Example
 ///
 /// ```
-/// use axum::{Router, routing::get, http::Request};
+/// use pin_axum::{Router, routing::get, http::Request};
 /// use axum_tracing_opentelemetry::opentelemetry_tracing_layer;
 /// use std::net::SocketAddr;
-/// use tower::ServiceBuilder;
+/// use pin_tower::ServiceBuilder;
 ///
 /// let app = Router::new()
 ///     .route("/", get(|| async {}))
 ///     .layer(opentelemetry_tracing_layer());
 ///
 /// # async {
-/// axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
+/// pin_axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
 ///     // we must use `into_make_service_with_connect_info` for `opentelemetry_tracing_layer` to
 ///     // access the client ip
 ///     .serve(app.into_make_service_with_connect_info::<SocketAddr>())
@@ -308,8 +308,8 @@ fn http_scheme(scheme: &Scheme) -> Cow<'static, str> {
 }
 
 // If remote request has no span data the propagator defaults to an unsampled context
-fn extract_remote_context(headers: &http::HeaderMap) -> opentelemetry::Context {
-    struct HeaderExtractor<'a>(&'a http::HeaderMap);
+fn extract_remote_context(headers: &HeaderMap) -> opentelemetry::Context {
+    struct HeaderExtractor<'a>(&'a HeaderMap);
 
     impl<'a> opentelemetry::propagation::Extractor for HeaderExtractor<'a> {
         fn get(&self, key: &str) -> Option<&str> {
@@ -336,8 +336,8 @@ enum OtelContext {
 fn create_context_with_trace(remote_context: opentelemetry::Context) -> (TraceId, OtelContext) {
     if !remote_context.span().span_context().is_valid() {
         // create a fake remote context but with a fresh new trace_id
-        use opentelemetry::sdk::trace::IdGenerator;
-        use opentelemetry::sdk::trace::RandomIdGenerator;
+        use opentelemetry_sdk::trace::IdGenerator;
+        use opentelemetry_sdk::trace::RandomIdGenerator;
         use opentelemetry::trace::SpanContext;
         let trace_id = RandomIdGenerator::default().new_trace_id();
         let span_id = RandomIdGenerator::default().new_span_id();
@@ -403,7 +403,7 @@ pub struct OtelOnEos;
 
 impl OnEos for OtelOnEos {
     #[inline]
-    fn on_eos(self, _trailers: Option<&http::HeaderMap>, _stream_duration: Duration, _span: &Span) {
+    fn on_eos(self, _trailers: Option<&HeaderMap>, _stream_duration: Duration, _span: &Span) {
     }
 }
 
@@ -451,13 +451,15 @@ impl OnFailure<GrpcFailureClass> for OtelOnGrpcFailure {
 mod tests {
     use super::*;
     use assert2::*;
-    use axum::{
+    use pin_axum::{
         body::Body,
+        http::StatusCode,
+        handler::Handler,
         routing::{get, post},
         Router,
     };
-    use http::{Request, StatusCode};
-    use opentelemetry::sdk::propagation::TraceContextPropagator;
+    use pin_http::Request;
+    use opentelemetry_sdk::propagation::TraceContextPropagator;
     use rstest::*;
     use serde_json::Value;
     use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -510,9 +512,9 @@ mod tests {
                 "/nest",
                 Router::new()
                     .route("/:nest_id", get(|| async {}))
-                    .fallback(|| async { (StatusCode::NOT_FOUND, "inner fallback") }),
+                    .fallback((|| async { (StatusCode::NOT_FOUND, "inner fallback") }).into_service()),
             )
-            .fallback(|| async { (StatusCode::NOT_FOUND, "outer fallback") })
+            .fallback((|| async { (StatusCode::NOT_FOUND, "outer fallback") }).into_service())
             .layer(opentelemetry_tracing_layer());
         let mut builder = Request::builder();
         for (key, value) in headers.iter() {
@@ -583,16 +585,17 @@ mod tests {
     }
 
     async fn span_event_for_request(mut router: Router, req: Request<Body>) -> Vec<Value> {
-        use axum::body::HttpBody as _;
-        use tower::{Service, ServiceExt};
+        use pin_axum::body::HttpBody as _;
+        use pin_tower::{Service, ServiceExt};
+        use opentelemetry::trace::TracerProvider;
         use tracing_subscriber::layer::SubscriberExt;
 
-        // setup a non Noop OpenTelemetry tracer to have non-empty trace_id
-        let tracer = opentelemetry_otlp::new_pipeline()
+        let tracer_provider = opentelemetry_otlp::new_pipeline()
             .tracing()
             .with_exporter(opentelemetry_otlp::new_exporter().tonic())
-            .install_batch(opentelemetry::runtime::Tokio)
+            .install_batch(opentelemetry_sdk::runtime::Tokio)
             .unwrap();
+        let tracer = tracer_provider.tracer("axum-tracing-opentelemetry");
         opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
         let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
